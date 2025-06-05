@@ -61,6 +61,7 @@
         .btn-secondary {
             margin-top: 15px;
             display: block;
+            display: hidden;
             background-color: #6c757d;
             text-align: center;
             text-decoration: none;
@@ -75,9 +76,27 @@
             margin-top: 10px;
             font-size: 0.9rem;
         }
+        .success-msg {
+            width: 90%;
+            margin: 10px auto;
+            padding: 10px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            font-weight: bold;
+            border-radius: 4px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
+    
+@if(session('success'))
+    <div class="success-msg">
+        {{ session('success') }}
+    </div>
+@endif
+
     <div class="form-container">
         <div class="form-title">Registro de Persona</div>
         <form id="personaForm" action="{{ route('persona.store') }}" method="POST" onsubmit="return validarFormulario()">
@@ -124,10 +143,11 @@
             </div>
         </form>
 
-        <a href="{{ route('persona.registros') }}" class="btn btn-secondary">Ver registros</a>
+      
     </div>
 
     <script>
+         // boton de ver registros dentro del div <a href="{{ route('persona.registros') }}" class="btn btn-secondary">Ver registros</a> 
         document.getElementById('timezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
         function validarFormulario() {

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Persona;
+use App\Mail\FormularioSubmitted;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\QueryException;
 
@@ -56,7 +58,7 @@ class PersonaController extends Controller
                 'telefono' => $request->telefono,
                 'ip' => $request->ip(),
                 'timezone' => $request->timezone,
-                'registro_via' => 'mobile',
+                'registro_via' => 'mobile', // ✅ Cambiado de 'api' a 'mobile'
                 'notificacion_via_correo' => $request->boolean('notificar_por_correo'),
                 'notificacion_via_sms' => $request->boolean('notificar_por_sms'),
             ];
@@ -69,9 +71,31 @@ class PersonaController extends Controller
 
             logger('Persona creada exitosamente', ['id' => $persona->id]);
 
+            // ✅ LÓGICA DE ENVÍO DE EMAIL CONDICIONAL
+            $emailStatus = '';
+            
+            // Solo enviar email si el checkbox está marcado
+            if ($persona->notificacion_via_correo) {
+                try {
+                    Mail::to($persona->correo_electronico)->send(new FormularioSubmitted($persona));
+                    $emailStatus = 'Email de confirmación enviado.';
+                    logger('Email enviado exitosamente', ['email' => $persona->correo_electronico]);
+                } catch (\Exception $e) {
+                    $emailStatus = 'No se pudo enviar el email de confirmación.';
+                    logger('Error enviando email', [
+                        'email' => $persona->correo_electronico,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            } else {
+                $emailStatus = 'No se envió email (opción no seleccionada).';
+                logger('Email no enviado - opción desactivada', ['email' => $persona->correo_electronico]);
+            }
+
             return response()->json([
                 'success' => true,
-                'data' => $persona
+                'data' => $persona,
+                'message' => 'Persona registrada exitosamente. ' . $emailStatus
             ], 201);
 
         } catch (QueryException $e) {
@@ -92,7 +116,7 @@ class PersonaController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error de base de datos'
+                'message' => 'Error de base de datos: ' . $e->getMessage()
             ], 500);
 
         } catch (\Exception $e) {
@@ -104,7 +128,7 @@ class PersonaController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error interno del servidor'
+                'message' => 'Error interno del servidor: ' . $e->getMessage()
             ], 500);
         }
     }
