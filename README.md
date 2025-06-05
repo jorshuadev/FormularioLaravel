@@ -15,7 +15,7 @@ Este proyecto es una solución para la prueba técnica que consiste en desarroll
 1. **Clonar el repositorio**
 
 ```bash
-git clone https://github.com/usuario/repositorio.git
+git clone https://github.com/jorshuadev/FormularioLaravel.git
 cd repositorio
 ```
 
