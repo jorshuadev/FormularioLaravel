@@ -1,14 +1,23 @@
 <?php
+// app/Http/Controllers/PersonaController.php
 
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Persona;
 use App\Mail\FormularioSubmitted;
+use App\Services\SmsService;
 use Illuminate\Support\Facades\Mail;
 
 class PersonaController extends Controller
 {
+    protected $smsService;
+
+    public function __construct(SmsService $smsService)
+    {
+        $this->smsService = $smsService;
+    }
+
     public function create()
     {
         return view('home');
@@ -45,19 +54,36 @@ class PersonaController extends Controller
         
         $persona->save();
 
-        //  Solo enviar email si el checkbox está marcado
+        $mensajes = [];
+
+        // ✅ Enviar email si está activado
         if ($persona->notificacion_via_correo) {
             try {
                 Mail::to($persona->correo_electronico)->send(new FormularioSubmitted($persona));
-                $mensaje = 'Registro creado correctamente. Se ha enviado un email de confirmación.';
+                $mensajes[] = 'Email de confirmación enviado.';
             } catch (\Exception $e) {
-                $mensaje = 'Registro creado correctamente. No se pudo enviar el email de confirmación.';
+                $mensajes[] = 'No se pudo enviar el email de confirmación.';
             }
-        } else {
-            $mensaje = 'Registro creado correctamente. No se envió email (opción no seleccionada).';
         }
 
-        return redirect()->route('persona.create')->with('success', $mensaje);
+        // ✅ Enviar SMS si está activado
+        if ($persona->notificacion_via_sms) {
+            $mensajeSms = "Hola {$persona->nombre}, tu registro ha sido completado exitosamente. Gracias por registrarte con nosotros.";
+            $resultadoSms = $this->smsService->sendSms($persona->telefono, $mensajeSms);
+            
+            if ($resultadoSms['success']) {
+                $mensajes[] = 'SMS de confirmación enviado.';
+            } else {
+                $mensajes[] = 'No se pudo enviar el SMS de confirmación.';
+            }
+        }
+
+        $mensajeFinal = 'Registro creado correctamente.';
+        if (!empty($mensajes)) {
+            $mensajeFinal .= ' ' . implode(' ', $mensajes);
+        }
+
+        return redirect()->route('persona.create')->with('success', $mensajeFinal);
     }
 
     public function index()

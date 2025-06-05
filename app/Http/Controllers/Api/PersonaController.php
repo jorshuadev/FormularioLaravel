@@ -1,4 +1,5 @@
 <?php
+// app/Http/Controllers/Api/PersonaController.php
 
 namespace App\Http\Controllers\Api;
 
@@ -6,6 +7,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Persona;
 use App\Mail\FormularioSubmitted;
+use App\Services\SmsService;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\QueryException;
@@ -58,52 +60,52 @@ class PersonaController extends Controller
                 'telefono' => $request->telefono,
                 'ip' => $request->ip(),
                 'timezone' => $request->timezone,
-                'registro_via' => 'mobile', // ✅ Cambiado de 'api' a 'mobile'
+                'registro_via' => 'mobile',
                 'notificacion_via_correo' => $request->boolean('notificar_por_correo'),
                 'notificacion_via_sms' => $request->boolean('notificar_por_sms'),
             ];
 
-            // Log para debug usando helper function
-            logger('Datos a insertar:', $datosPersona);
-
             // Crear la persona
             $persona = Persona::create($datosPersona);
 
-            logger('Persona creada exitosamente', ['id' => $persona->id]);
-
-            // ✅ LÓGICA DE ENVÍO DE EMAIL CONDICIONAL
-            $emailStatus = '';
+            // ✅ LÓGICA DE ENVÍO DE EMAIL Y SMS CONDICIONAL
+            $notificaciones = [];
             
             // Solo enviar email si el checkbox está marcado
             if ($persona->notificacion_via_correo) {
                 try {
                     Mail::to($persona->correo_electronico)->send(new FormularioSubmitted($persona));
-                    $emailStatus = 'Email de confirmación enviado.';
-                    logger('Email enviado exitosamente', ['email' => $persona->correo_electronico]);
+                    $notificaciones[] = 'Email de confirmación enviado.';
                 } catch (\Exception $e) {
-                    $emailStatus = 'No se pudo enviar el email de confirmación.';
-                    logger('Error enviando email', [
-                        'email' => $persona->correo_electronico,
-                        'error' => $e->getMessage()
-                    ]);
+                    $notificaciones[] = 'No se pudo enviar el email de confirmación.';
                 }
-            } else {
-                $emailStatus = 'No se envió email (opción no seleccionada).';
-                logger('Email no enviado - opción desactivada', ['email' => $persona->correo_electronico]);
+            }
+
+            // Solo enviar SMS si el checkbox está marcado
+            if ($persona->notificacion_via_sms) {
+                $smsService = new SmsService();
+                $mensajeSms = "Hola {$persona->nombre}, tu registro ha sido completado exitosamente.";
+                $resultadoSms = $smsService->sendSms($persona->telefono, $mensajeSms);
+                
+                if ($resultadoSms['success']) {
+                    $notificaciones[] = 'SMS de confirmación enviado.';
+                } else {
+                    $notificaciones[] = 'No se pudo enviar el SMS de confirmación.';
+                }
+            }
+
+            $mensajeFinal = 'Persona registrada exitosamente.';
+            if (!empty($notificaciones)) {
+                $mensajeFinal .= ' ' . implode(' ', $notificaciones);
             }
 
             return response()->json([
                 'success' => true,
                 'data' => $persona,
-                'message' => 'Persona registrada exitosamente. ' . $emailStatus
+                'message' => $mensajeFinal
             ], 201);
 
         } catch (QueryException $e) {
-            logger()->error('Error de base de datos:', [
-                'message' => $e->getMessage(),
-                'sql' => $e->getSql() ?? 'N/A'
-            ]);
-
             // Error específico para duplicados
             if (str_contains($e->getMessage(), 'Duplicate entry')) {
                 return response()->json([
@@ -120,12 +122,6 @@ class PersonaController extends Controller
             ], 500);
 
         } catch (\Exception $e) {
-            logger()->error('Error general:', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Error interno del servidor: ' . $e->getMessage()
