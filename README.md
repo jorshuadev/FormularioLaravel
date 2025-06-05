@@ -173,10 +173,3 @@ Accept: application/json
 ## 📄 Licencia
 
 Este proyecto es de uso libre únicamente con fines evaluativos.
-
-```
-
----
-
-¿Deseas que ahora prepare el archivo `.env.example` o algún otro archivo como parte de la entrega?
-```
