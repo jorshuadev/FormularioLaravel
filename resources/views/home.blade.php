@@ -173,7 +173,7 @@
                    id="nombre" 
                    name="nombre" 
                    value="{{ old('nombre') }}"
-                   placeholder="Ej: Juan Pérez González"
+                   placeholder="Ej: Juan Pérez"
                    class="{{ $errors->has('nombre') ? 'error-field' : '' }}"
                    required />
             @if($errors->has('nombre'))
@@ -223,7 +223,7 @@
                    id="telefono" 
                    name="telefono" 
                    value="{{ old('telefono') }}"
-                   placeholder="Ej: 64848240, 2345-6789, 6123-4567"
+                   placeholder="Ej: 61234567, 2345-6789, 6123-4567"
                    class="{{ $errors->has('telefono') ? 'error-field' : '' }}"
                    required />
             @if($errors->has('telefono'))
@@ -258,9 +258,7 @@
         </form>
 
         {{-- 🔥 BOTÓN PARA VER REGISTROS --}}
-        <div style="text-align: center;">
-            <a href="{{ route('persona.registros') }}" class="btn btn-secondary">Ver registros</a>
-        </div>
+        
     </div>
 
     <script>
@@ -323,7 +321,7 @@
             const telefonoLimpio = telefono.replace(/[\s\-$$$$]/g, '');
             const telefonoRegex = /^[2-9]\d{6,7}$/;
             if (!telefonoRegex.test(telefonoLimpio)) {
-                errorMensaje.textContent = 'El teléfono debe comenzar con 2-9 y tener 7-8 dígitos (ej: 64848240, 2345-6789).';
+                errorMensaje.textContent = 'El teléfono debe comenzar con 2-9 y tener 7-8 dígitos (ej: 60000000, 2345-6789).';
                 errorMensaje.classList.add('show');
                 return false;
             }
@@ -370,10 +368,6 @@
                 }
             });
 
-            // 🔥 REMOVIDO: Ya no hay formateo automático para número de documento
-            // El usuario puede escribir libremente: 8-123-4567, 81234567, 8 123 4567, etc.
-            // El sistema limpiará y validará en el backend
-        });
     </script>
 </body>
 </html>

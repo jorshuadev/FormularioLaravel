@@ -118,6 +118,12 @@ class PersonaController extends Controller
      */
     private function prepareDataForValidation(Request $request)
     {
+        // 🔥 AUTO-DETECTAR TIMEZONE SI NO SE PROPORCIONA
+        if (!$request->has('timezone') || empty($request->timezone)) {
+            $timezone = $this->detectTimezone($request);
+            $request->merge(['timezone' => $timezone]);
+        }
+
         // Limpiar número de documento
         if ($request->has('numero_documento')) {
             $numeroDocumento = $this->cleanDocumentNumber($request->numero_documento, $request->tipo_documento);
@@ -168,6 +174,7 @@ class PersonaController extends Controller
                 'unique:personas,nro_documento',
                 function ($attribute, $value, $fail) use ($tipoDocumento) {
                     if ($tipoDocumento === 'cedula') {
+                        // Validar el formato original (con guiones) antes de limpiar
                         if (!$this->validarCedulaPanama($value)) {
                             $fail('El número de cédula no tiene un formato válido para Panamá. Debe seguir el formato: P-PPP-PPPP o PP-PPPP-PPPP (ej: 8-123-4567, 8-1026-2297).');
                         }
@@ -197,10 +204,10 @@ class PersonaController extends Controller
                 'unique:personas,telefono'
             ],
             'timezone' => [
-                'required',
+                'nullable', // 🔥 CAMBIADO: Ya no es required porque se auto-detecta
                 function ($attribute, $value, $fail) {
-                    // Validar timezone manualmente
-                    if (!$this->validarTimezone($value)) {
+                    // Solo validar si se proporciona un valor
+                    if ($value && !$this->validarTimezone($value)) {
                         $fail('La zona horaria seleccionada no es válida.');
                     }
                 }
@@ -242,7 +249,7 @@ class PersonaController extends Controller
             'telefono.unique' => 'Ya existe una persona registrada con este número de teléfono.',
             
             // Timezone
-            'timezone.required' => 'La zona horaria es obligatoria.',
+            // 'timezone.required' => 'La zona horaria es obligatoria.', // 🔥 REMOVIDO
             
             // Notificaciones
             'notificar_correo.boolean' => 'El campo de notificación por correo debe ser verdadero o falso.',
@@ -253,51 +260,133 @@ class PersonaController extends Controller
     /**
      * 🔥 VALIDAR CÉDULA PANAMEÑA - CONFIRMANDO SOPORTE PARA 8-1026-2297 y 810262297
      */
-        private function validarCedulaPanama($cedula)
-        {
-            // Aceptar formatos con guiones directamente (como 8-0000-0000)
-            if (preg_match('/^(\d{1,2})-(\d{4})-(\d{4})$/', $cedula, $matches)) {
-                $provincia = (int)$matches[1];
-                $tomo = (int)$matches[2];
-                $asiento = (int)$matches[3];
-            } else {
-                // Si no tiene guiones, limpiarlo
-                $cedulaLimpia = preg_replace('/[\s\-]/', '', $cedula);
-
-                // Verificar que solo contenga números
-                if (!preg_match('/^\d+$/', $cedulaLimpia)) {
-                    return false;
-                }
-
-                // Verificar longitud válida
-                if (strlen($cedulaLimpia) < 8 || strlen($cedulaLimpia) > 10) {
-                    return false;
-                }
-
-                // Verificar formato sin guiones
-                if (preg_match('/^(\d{1})(\d{4})(\d{4})$/', $cedulaLimpia, $matches) || 
-                    preg_match('/^(\d{2})(\d{4})(\d{4})$/', $cedulaLimpia, $matches)) {
-                    $provincia = (int)$matches[1];
-                    $tomo = (int)$matches[2];
-                    $asiento = (int)$matches[3];
-                } else {
-                    return false;
-                }
-            }
-
-            // Validar que provincia esté entre 1 y 13
-            if ($provincia < 1 || $provincia > 13) {
-                return false;
-            }
-
-            // Validar que tomo y asiento no sean 0
-            if ($tomo === 0 || $asiento === 0) {
-                return false;
-            }
-
+    private function validarCedulaPanama($cedula)
+    {
+        // Verificar primero el formato con guiones
+        if ($this->validarFormatoCedulaConGuiones($cedula)) {
             return true;
         }
-
+        
+        // Si no tiene el formato con guiones, verificar el formato sin guiones
+        return $this->validarFormatoCedulaSinGuiones($cedula);
+    }
+    
+    /**
+     * Validar cédula con formato de guiones (8-123-4567, 8-1026-2297)
+     */
+    private function validarFormatoCedulaConGuiones($cedula)
+    {
+        // Formato 1: P-PPP-PPPP (ej: 8-123-4567)
+        if (preg_match('/^(\d{1})-(\d{3})-(\d{4})$/', $cedula, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            return $this->validarComponentesCedula($provincia, $tomo, $asiento);
+        }
+        
+        // Formato 2: PP-PPP-PPPP (ej: 10-123-4567)
+        if (preg_match('/^(\d{2})-(\d{3})-(\d{4})$/', $cedula, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            return $this->validarComponentesCedula($provincia, $tomo, $asiento);
+        }
+        
+        // Formato 3: P-PPPP-PPPP (ej: 8-1026-2297)
+        if (preg_match('/^(\d{1})-(\d{4})-(\d{4})$/', $cedula, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            return $this->validarComponentesCedula($provincia, $tomo, $asiento);
+        }
+        
+        // Formato 4: PP-PPPP-PPPP (ej: 13-1026-2297)
+        if (preg_match('/^(\d{2})-(\d{4})-(\d{4})$/', $cedula, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            return $this->validarComponentesCedula($provincia, $tomo, $asiento);
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Validar cédula sin guiones (81234567, 810262297)
+     */
+    private function validarFormatoCedulaSinGuiones($cedula)
+    {
+        // Limpiar el valor de espacios y guiones
+        $cedulaLimpia = preg_replace('/[\s\-]/', '', $cedula);
+        
+        // Verificar que solo contenga números
+        if (!preg_match('/^\d+$/', $cedulaLimpia)) {
+            return false;
+        }
+        
+        // Verificar longitud: 8-10 dígitos para cédulas panameñas
+        if (strlen($cedulaLimpia) < 8 || strlen($cedulaLimpia) > 10) {
+            return false;
+        }
+        
+        $formatoValido = false;
+        $provincia = 0;
+        $tomo = 0;
+        $asiento = 0;
+        
+        // Formato 1: P-PPP-PPPP (8 dígitos) - ej: 8-123-4567 → 81234567
+        if (preg_match('/^(\d{1})(\d{3})(\d{4})$/', $cedulaLimpia, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            $formatoValido = true;
+        }
+        // Formato 2: PP-PPP-PPPP (9 dígitos) - ej: 10-123-4567 → 101234567
+        elseif (preg_match('/^(\d{2})(\d{3})(\d{4})$/', $cedulaLimpia, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            $formatoValido = true;
+        }
+        // Formato 3: P-PPPP-PPPP (9 dígitos) - ej: 8-1026-2297 → 810262297
+        elseif (preg_match('/^(\d{1})(\d{4})(\d{4})$/', $cedulaLimpia, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            $formatoValido = true;
+        }
+        // Formato 4: PP-PPPP-PPPP (10 dígitos) - ej: 13-1026-2297 → 13102622297
+        elseif (preg_match('/^(\d{2})(\d{4})(\d{4})$/', $cedulaLimpia, $matches)) {
+            $provincia = (int)$matches[1];
+            $tomo = (int)$matches[2];
+            $asiento = (int)$matches[3];
+            $formatoValido = true;
+        }
+        
+        if (!$formatoValido) {
+            return false;
+        }
+        
+        return $this->validarComponentesCedula($provincia, $tomo, $asiento);
+    }
+    
+    /**
+     * Validar los componentes de la cédula (provincia, tomo, asiento)
+     */
+    private function validarComponentesCedula($provincia, $tomo, $asiento)
+    {
+        // Validar provincia: 1-13 para provincias panameñas + comarcas
+        if ($provincia < 1 || $provincia > 13) {
+            return false;
+        }
+        
+        // Validar que tomo y asiento no sean 0
+        if ($tomo === 0 || $asiento === 0) {
+            return false;
+        }
+        
+        return true;
+    }
 
     /**
      * Validar timezone
@@ -314,7 +403,8 @@ class PersonaController extends Controller
     {
         if (!$document) return '';
         
-        // Para cédulas, mantener solo números
+        // Para cédulas, mantener los guiones para la validación
+        // pero eliminarlos para el almacenamiento
         if ($tipoDocumento === 'cedula') {
             return preg_replace('/[^\d]/', '', $document);
         }
@@ -331,7 +421,7 @@ class PersonaController extends Controller
         if (!$phone) return '';
         
         // Remover espacios, guiones y paréntesis
-        $cleaned = preg_replace('/[\s\-$$$$]/', '', $phone);
+        $cleaned = preg_replace('/[\s\-()]/', '', $phone);
         
         // Si empieza con +507, removerlo para validación local
         if (strpos($cleaned, '+507') === 0) {
@@ -367,6 +457,190 @@ class PersonaController extends Controller
     {
         // Remover +507 si existe para almacenar solo el número local
         $cleaned = preg_replace('/^\+507/', '', $phone);
-        return preg_replace('/[\s\-$$$$]/', '', $cleaned);
+        return preg_replace('/[\s\-()]/', '', $cleaned);
+    }
+
+    /**
+     * 🔥 DETECTAR TIMEZONE AUTOMÁTICAMENTE
+     */
+    private function detectTimezone(Request $request)
+    {
+        try {
+            // Método 1: Detectar por IP usando servicio gratuito
+            $timezone = $this->detectTimezoneByIP($request->ip());
+            if ($timezone) {
+                Log::info("Timezone detectado por IP: {$timezone} para IP: " . $request->ip());
+                return $timezone;
+            }
+
+            // Método 2: Detectar por headers del navegador
+            $timezone = $this->detectTimezoneByHeaders($request);
+            if ($timezone) {
+                Log::info("Timezone detectado por headers: {$timezone}");
+                return $timezone;
+            }
+
+            // Método 3: Detectar por código de país del teléfono
+            if ($request->has('telefono')) {
+                $timezone = $this->detectTimezoneByPhone($request->telefono);
+                if ($timezone) {
+                    Log::info("Timezone detectado por teléfono: {$timezone}");
+                    return $timezone;
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::warning("Error detectando timezone: " . $e->getMessage());
+        }
+
+        // Fallback: Timezone por defecto para Panamá
+        Log::info("Usando timezone por defecto: America/Panama");
+        return 'America/Panama';
+    }
+
+    /**
+     * Detectar timezone por IP usando servicio gratuito
+     */
+    private function detectTimezoneByIP($ip)
+    {
+        try {
+            // No detectar para IPs locales
+            if ($ip === '127.0.0.1' || $ip === '::1' || strpos($ip, '192.168.') === 0 || strpos($ip, '10.') === 0) {
+                return null;
+            }
+
+            // Usar servicio gratuito de geolocalización
+            $url = "http://ip-api.com/json/{$ip}?fields=timezone,status";
+            
+            $context = stream_context_create([
+                'http' => [
+                    'timeout' => 3, // 3 segundos timeout
+                    'user_agent' => 'Laravel App Timezone Detection'
+                ]
+            ]);
+
+            $response = @file_get_contents($url, false, $context);
+            
+            if ($response) {
+                $data = json_decode($response, true);
+                
+                if ($data && $data['status'] === 'success' && isset($data['timezone'])) {
+                    $timezone = $data['timezone'];
+                    
+                    // Verificar que el timezone sea válido
+                    if (in_array($timezone, timezone_identifiers_list())) {
+                        return $timezone;
+                    }
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::warning("Error en detección por IP: " . $e->getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Detectar timezone por headers del navegador
+     */
+    private function detectTimezoneByHeaders(Request $request)
+    {
+        try {
+            // Buscar header personalizado de timezone (si el frontend lo envía)
+            $timezone = $request->header('X-Timezone');
+            if ($timezone && in_array($timezone, timezone_identifiers_list())) {
+                return $timezone;
+            }
+
+            // Detectar por Accept-Language header
+            $acceptLanguage = $request->header('Accept-Language');
+            if ($acceptLanguage) {
+                // Mapeo básico de idiomas a timezones comunes
+                $languageTimezoneMap = [
+                    'es-PA' => 'America/Panama',
+                    'es-CR' => 'America/Costa_Rica',
+                    'es-GT' => 'America/Guatemala',
+                    'es-HN' => 'America/Tegucigalpa',
+                    'es-NI' => 'America/Managua',
+                    'es-SV' => 'America/El_Salvador',
+                    'es-BZ' => 'America/Belize',
+                    'es-MX' => 'America/Mexico_City',
+                    'es-CO' => 'America/Bogota',
+                    'es-VE' => 'America/Caracas',
+                    'es-US' => 'America/New_York',
+                    'en-US' => 'America/New_York',
+                    'en-CA' => 'America/Toronto',
+                ];
+
+                foreach ($languageTimezoneMap as $lang => $tz) {
+                    if (strpos($acceptLanguage, $lang) !== false) {
+                        return $tz;
+                    }
+                }
+
+                // Fallback para español genérico
+                if (strpos($acceptLanguage, 'es') !== false) {
+                    return 'America/Panama';
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::warning("Error en detección por headers: " . $e->getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Detectar timezone por número de teléfono
+     */
+    private function detectTimezoneByPhone($phone)
+    {
+        try {
+            $cleanPhone = preg_replace('/[^\d+]/', '', $phone);
+
+            // Mapeo de códigos de país a timezones
+            $phoneTimezoneMap = [
+                '+507' => 'America/Panama',
+                '507' => 'America/Panama',
+                '+506' => 'America/Costa_Rica',
+                '506' => 'America/Costa_Rica',
+                '+502' => 'America/Guatemala',
+                '502' => 'America/Guatemala',
+                '+504' => 'America/Tegucigalpa',
+                '504' => 'America/Tegucigalpa',
+                '+505' => 'America/Managua',
+                '505' => 'America/Managua',
+                '+503' => 'America/El_Salvador',
+                '503' => 'America/El_Salvador',
+                '+501' => 'America/Belize',
+                '501' => 'America/Belize',
+                '+52' => 'America/Mexico_City',
+                '52' => 'America/Mexico_City',
+                '+57' => 'America/Bogota',
+                '57' => 'America/Bogota',
+                '+58' => 'America/Caracas',
+                '58' => 'America/Caracas',
+                '+1' => 'America/New_York',
+                '1' => 'America/New_York',
+            ];
+
+            foreach ($phoneTimezoneMap as $code => $timezone) {
+                if (strpos($cleanPhone, $code) === 0) {
+                    return $timezone;
+                }
+            }
+
+            // Si el teléfono no tiene código de país pero parece panameño (7-8 dígitos empezando con 2-9)
+            if (preg_match('/^[2-9]\d{6,7}$/', $cleanPhone)) {
+                return 'America/Panama';
+            }
+
+        } catch (\Exception $e) {
+            Log::warning("Error en detección por teléfono: " . $e->getMessage());
+        }
+
+        return null;
     }
 }
